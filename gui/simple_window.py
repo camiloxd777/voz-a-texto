@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from core.exporters import to_ass, to_sbv, to_srt, to_ttml, to_vegas_csv
 
+from .review_dialog import ReviewDialog
 from .worker import TranscribeWorker
 
 # Ajustes fijos del flujo simple.
@@ -261,6 +262,22 @@ class SimpleWindow(QWidget):
 
         if not cues:
             self.status_label.setText("No se detectó voz en el audio.")
+            self._cleanup_audio(audio_path)
+            return
+
+        # Revisión antes de generar el archivo.
+        self.status_label.setText(f"Transcripción lista: {len(cues)} subtítulos. Revisa antes de generar.")
+        dialog = ReviewDialog(cues, info, self)
+        accepted = dialog.exec()
+        self._cleanup_audio(audio_path)
+
+        if not accepted:
+            self.status_label.setText("Revisión cancelada. No se generó ningún archivo.")
+            return
+
+        final_cues = dialog.result_cues()
+        if not final_cues:
+            self.status_label.setText("No hay subtítulos para exportar.")
             return
 
         fmt = FORMATS[self.format_combo.currentIndex()]
@@ -268,20 +285,29 @@ class SimpleWindow(QWidget):
 
         key = fmt["key"]
         if key == "csv":
-            out_path.write_text(to_vegas_csv(cues, fps=FPS), encoding="utf-8")
+            out_path.write_text(to_vegas_csv(final_cues, fps=FPS), encoding="utf-8")
         elif key == "srt":
-            out_path.write_text(to_srt(cues), encoding="utf-8")
+            out_path.write_text(to_srt(final_cues), encoding="utf-8")
         elif key == "sbv":
-            out_path.write_text(to_sbv(cues), encoding="utf-8")
+            out_path.write_text(to_sbv(final_cues), encoding="utf-8")
         elif key == "ass":
-            out_path.write_text(to_ass(cues), encoding="utf-8")
+            out_path.write_text(to_ass(final_cues), encoding="utf-8")
         elif key == "ttml":
-            out_path.write_text(to_ttml(cues), encoding="utf-8")
+            out_path.write_text(to_ttml(final_cues), encoding="utf-8")
 
-        self.status_label.setText(f"Listo: {len(cues)} subtítulos.")
+        self.status_label.setText(f"Listo: {len(final_cues)} subtítulos.")
         self.done_label.setText(f"✅  ¡Listo! Tu archivo ({fmt['label']}):")
         self.path_edit.setText(str(out_path))
         self.result_frame.setVisible(True)
+
+    @staticmethod
+    def _cleanup_audio(audio_path: str | None) -> None:
+        if not audio_path:
+            return
+        try:
+            Path(audio_path).unlink(missing_ok=True)
+        except Exception:
+            pass
 
     def _on_failed(self, msg: str) -> None:
         self.progress.setVisible(False)

@@ -77,6 +77,11 @@ class TranscribeWorker(QThread):
                 max_lines=self.max_lines,
             )
 
+            # Incluir palabras para permitir ajustes en la revisión.
+            info["words"] = words
+            info["max_words"] = self.max_words
+            info["max_lines"] = self.max_lines
+
             # Se conserva el WAV para el waveform; lo limpia la ventana al cerrar.
             self.finished_ok.emit(cues, str(audio_path), info)
         except Exception as exc:  # noqa: BLE001
