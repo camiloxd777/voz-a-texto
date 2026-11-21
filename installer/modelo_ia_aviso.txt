@@ -1,0 +1,22 @@
+Se instalará el modelo de inteligencia artificial (IA)
+
+Este instalador incluirá el modelo de IA "Whisper large-v3" (aprox. 3 GB).
+
+¿Por qué se instala este modelo?
+- Es el "cerebro" que transcribe tu audio/video a texto.
+- Funciona de forma LOCAL en tu computadora: tu audio no se envía a internet.
+- Permite que la app funcione sin conexión después de la instalación.
+- Es el modelo Whisper de código abierto más preciso, para obtener la mejor
+  transcripción posible.
+
+Nota:
+- Por su tamaño (~3 GB), la instalación ocupará más espacio y puede tardar unos
+  minutos en copiar/instalar estos archivos. Esto es normal.
+- La app en sí (sin contar el modelo) incluye todo lo necesario: no tendrás que
+  instalar Python, CUDA ni librerías por separado.
+- Para acelerar la transcripción con tarjeta gráfica se necesita una GPU NVIDIA
+  compatible y su driver actualizado. Si no tienes una (por ejemplo, AMD o sin
+  gráfica dedicada), la app funcionará igualmente usando el procesador (CPU),
+  aunque será más lenta.
+
+Haz clic en "Siguiente" para continuar con la instalación.

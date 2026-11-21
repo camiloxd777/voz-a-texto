@@ -1,0 +1,32 @@
+# Entornos y cachés
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build / empaquetado (generados por PyInstaller / Inno Setup)
+build/
+dist/
+installer_output/
+
+# Modelos locales grandes (no subir al repo)
+models/
+
+# Archivos temporales / SO
+.tmp-*/
+*.tmp
+*.log
+Thumbs.db
+.DS_Store
+
+# Salidas de prueba generadas en la raíz
+/*.srt
+/*.ass
+/*.vegas.csv
+/*.sbv
+/*.ttml
+/*.vtt
