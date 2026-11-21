@@ -65,11 +65,6 @@ def _apply_case(text: str, mode: str) -> str:
     return text  # normal
 
 
-def _split_words(text: str) -> list[str]:
-    # Separar por espacios/saltos de línea conservando palabras.
-    return [t for t in re.split(r"\s+", text.strip()) if t]
-
-
 class ReviewDialog(QDialog):
     """Permite revisar/editar subtítulos antes de generar el archivo final."""
 
@@ -97,10 +92,7 @@ class ReviewDialog(QDialog):
         title.setFont(QFont("Segoe UI", 14, QFont.Bold))
         root.addWidget(title)
 
-        hint = QLabel(
-            "Edita el texto si hace falta. Puedes mover la última palabra al siguiente "
-            "subtítulo o subir la primera palabra al anterior."
-        )
+        hint = QLabel("Edita el texto si hace falta antes de generar el archivo.")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #aaa;")
         root.addWidget(hint)
@@ -114,22 +106,6 @@ class ReviewDialog(QDialog):
         self.table.setColumnWidth(2, 110)
         self.table.itemChanged.connect(self._on_item_changed)
         root.addWidget(self.table, 1)
-
-        # Acciones de edición de palabras
-        word_row = QHBoxLayout()
-        word_row.addWidget(QLabel("Mover palabras:"))
-        self.move_down_btn = QPushButton("Bajar última palabra ↓")
-        self.move_down_btn.setToolTip("Mueve la última palabra del subtítulo seleccionado al siguiente")
-        self.move_down_btn.clicked.connect(self._move_last_word_down)
-        word_row.addWidget(self.move_down_btn)
-
-        self.move_up_btn = QPushButton("Subir primera palabra ↑")
-        self.move_up_btn.setToolTip("Mueve la primera palabra del subtítulo seleccionado al anterior")
-        self.move_up_btn.clicked.connect(self._move_first_word_up)
-        word_row.addWidget(self.move_up_btn)
-
-        word_row.addStretch(1)
-        root.addLayout(word_row)
 
         # Opciones de formato de texto
         fmt_row = QHBoxLayout()
@@ -177,20 +153,6 @@ class ReviewDialog(QDialog):
             self.table.setItem(i, 3, QTableWidgetItem(cue.text))
         self._loading = False
 
-    def _refresh_table(self) -> None:
-        self._loading = True
-        # Ajustar filas si cambió la cantidad (por si acaso)
-        if self.table.rowCount() != len(self._cues):
-            self._populate_table()
-            return
-        for i, cue in enumerate(self._cues):
-            self.table.item(i, 0).setText(str(i + 1))
-            self.table.item(i, 1).setText(fmt_time(cue.start))
-            self.table.item(i, 2).setText(fmt_time(cue.end))
-            self.table.item(i, 3).setText(cue.text)
-        self._loading = False
-
-    # ------------------------------------------------------------------
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if self._loading:
             return
@@ -217,66 +179,6 @@ class ReviewDialog(QDialog):
         self._loading = True
         item.setText(text)
         self._loading = False
-
-    # ------------------------------------------------------------------
-    # Mover palabras entre subtítulos
-    def _selected_row(self) -> int:
-        items = self.table.selectedItems()
-        if not items:
-            return -1
-        return items[0].row()
-
-    def _move_last_word_down(self) -> None:
-        row = self._selected_row()
-        if row < 0 or row >= len(self._cues) - 1:
-            return
-        src = self._cues[row]
-        dst = self._cues[row + 1]
-        src_words = _split_words(src.text)
-        if len(src_words) <= 1:
-            return
-        moved = src_words[-1]
-        src.text = " ".join(src_words[:-1])
-        dst_words = _split_words(dst.text)
-        dst.text = " ".join([moved] + dst_words)
-
-        # Ajuste simple de tiempos: repartir proporcionalmente en src.
-        src_dur = max(src.end - src.start, 0.0)
-        if src_dur > 0 and len(src_words) > 0:
-            # quitar proporción de 1 palabra al final de src
-            per = src_dur / len(src_words)
-            src.end = max(src.start + 0.1, src.end - per)
-        # extender inicio de dst ligeramente hacia atrás si hay hueco
-        if dst.start > src.end:
-            dst.start = src.end
-
-        self._refresh_table()
-        self.table.selectRow(row)
-
-    def _move_first_word_up(self) -> None:
-        row = self._selected_row()
-        if row <= 0 or row >= len(self._cues):
-            return
-        src = self._cues[row]
-        dst = self._cues[row - 1]
-        src_words = _split_words(src.text)
-        if len(src_words) <= 1:
-            return
-        moved = src_words[0]
-        src.text = " ".join(src_words[1:])
-        dst_words = _split_words(dst.text)
-        dst.text = " ".join(dst_words + [moved])
-
-        # Ajuste simple de tiempos
-        src_dur = max(src.end - src.start, 0.0)
-        if src_dur > 0 and len(src_words) > 0:
-            per = src_dur / len(src_words)
-            src.start = min(src.end - 0.1, src.start + per)
-        if dst.end < src.start:
-            dst.end = src.start
-
-        self._refresh_table()
-        self.table.selectRow(row)
 
     # ------------------------------------------------------------------
     def _apply_text_formatting(self) -> None:
