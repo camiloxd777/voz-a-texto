@@ -15,6 +15,7 @@ TARGET_LANGUAGES = {
     "zh": {"label": "Chino", "argos": "zh"},
     "fr": {"label": "Francés", "argos": "fr"},
     "pt": {"label": "Portugués", "argos": "pt"},
+    "ko": {"label": "Coreano", "argos": "ko"},
 }
 
 

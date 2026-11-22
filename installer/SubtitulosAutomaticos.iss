@@ -8,7 +8,7 @@
 ;   - Tener el modelo en caché de Hugging Face (ruta en ModelSource abajo)
 
 #define MyAppName "Subtitulos Automaticos"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.2.1"
 #define MyAppPublisher "masku"
 #define MyAppExeName "subtitulos.exe"
 
@@ -41,6 +41,7 @@ OutputBaseFilename=SubtitulosAutomaticos_Setup
 SetupIconFile={#ProjectDir}\assets\app_icon.ico
 Compression=lzma2/max
 SolidCompression=yes
+DiskSpanning=yes
 LZMAUseSeparateProcess=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible

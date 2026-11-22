@@ -58,6 +58,7 @@ TRANSLATE_OPTIONS = [
     ("zh", "Chino"),
     ("fr", "Francés"),
     ("pt", "Portugués"),
+    ("ko", "Coreano"),
 ]
 
 # Opciones de calidad/velocidad (key, etiqueta, beam, best_of, temperature, desc)
