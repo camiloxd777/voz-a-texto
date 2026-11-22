@@ -42,9 +42,11 @@ def _ensure_argos_configured() -> None:
 
     # Añadir directorios empaquetados donde Argos busca paquetes.
     current = list(getattr(settings, "package_dirs", []) or [])
+    current_strs = {str(p) for p in current}
     for d in bundled:
-        if d not in current:
-            current.append(d)
+        if d not in current_strs:
+            current.append(Path(d))
+            current_strs.add(d)
     settings.package_dirs = current
 
     # También establecer package_data_dir si el directorio por defecto no existe
