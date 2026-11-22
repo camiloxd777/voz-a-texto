@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.exporters import to_ass, to_sbv, to_srt, to_ttml, to_vegas_csv
+from core.translator import TARGET_LANGUAGES
 
 from .review_dialog import ReviewDialog
 from .worker import TranscribeWorker
@@ -45,6 +46,16 @@ WORD_OPTIONS = [
     (3, 2, "3 palabras en 2 líneas"),
     (4, 2, "4 palabras en 2 líneas"),
     (5, 2, "5 palabras en 2 líneas"),
+]
+
+# Opciones de traducción (key, etiqueta).
+TRANSLATE_OPTIONS = [
+    ("original", "Mantener original"),
+    ("en", "Inglés"),
+    ("ja", "Japonés"),
+    ("zh", "Chino"),
+    ("fr", "Francés"),
+    ("pt", "Portugués"),
 ]
 
 # Formatos disponibles (key, extensión, etiqueta, descripción).
@@ -132,6 +143,17 @@ class SimpleWindow(QWidget):
         self.words_combo.setCurrentIndex(2)  # 3 palabras por defecto
         words_row.addWidget(self.words_combo, 1)
         root.addLayout(words_row)
+
+        # Traducción
+        tr_row = QHBoxLayout()
+        tr_label = QLabel("Traducir:")
+        tr_label.setStyleSheet("color: #ddd;")
+        tr_row.addWidget(tr_label)
+        self.translate_combo = QComboBox()
+        self.translate_combo.addItems([opt[1] for opt in TRANSLATE_OPTIONS])
+        self.translate_combo.setCurrentIndex(0)  # Mantener original
+        tr_row.addWidget(self.translate_combo, 1)
+        root.addLayout(tr_row)
 
         # Formato de salida
         fmt_row = QHBoxLayout()
@@ -228,6 +250,7 @@ class SimpleWindow(QWidget):
 
         opt = WORD_OPTIONS[self.words_combo.currentIndex()]
         max_words, max_lines = opt[0], opt[1]
+        target_language = TRANSLATE_OPTIONS[self.translate_combo.currentIndex()][0]
 
         self._worker = TranscribeWorker(
             self._input_path,
@@ -240,6 +263,7 @@ class SimpleWindow(QWidget):
             min_duration=MIN_DURATION,
             max_duration=MAX_DURATION,
             max_lines=max_lines,
+            target_language=target_language,
         )
         self._worker.progress.connect(self._on_progress)
         self._worker.finished_ok.connect(self._on_finished)

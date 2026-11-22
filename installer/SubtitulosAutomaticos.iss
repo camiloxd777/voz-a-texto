@@ -8,7 +8,7 @@
 ;   - Tener el modelo en caché de Hugging Face (ruta en ModelSource abajo)
 
 #define MyAppName "Subtitulos Automaticos"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "masku"
 #define MyAppExeName "subtitulos.exe"
 

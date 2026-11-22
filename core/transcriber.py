@@ -194,14 +194,17 @@ class Transcriber:
         language: str | None = "es",
         word_timestamps: bool = True,
         vad_filter: bool = True,
+        task: str = "transcribe",
     ) -> tuple[list[Segment], dict]:
         """Transcribe `audio_path` y devuelve (segmentos, info).
 
+        `task`: "transcribe" (idioma original) o "translate" (traducir a inglés).
         `info` contiene language, language_probability, duration, etc.
         """
         segments_iter, info = self._model.transcribe(
             str(audio_path),
             language=language,
+            task=task,
             word_timestamps=word_timestamps,
             vad_filter=vad_filter,
             # --- Configuración de MÁXIMA precisión (open-source) ---

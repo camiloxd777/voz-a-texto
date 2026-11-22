@@ -9,6 +9,7 @@ from PySide6.QtCore import QThread, Signal
 from core.audio import extract_audio_for_transcription
 from core.subtitles import build_cues, words_from_segments
 from core.transcriber import Transcriber
+from core.translator import translate_texts
 
 
 class TranscribeWorker(QThread):
@@ -31,6 +32,7 @@ class TranscribeWorker(QThread):
         min_duration: float,
         max_duration: float,
         max_lines: int = 1,
+        target_language: str = "original",
         parent=None,
     ):
         super().__init__(parent)
@@ -44,6 +46,7 @@ class TranscribeWorker(QThread):
         self.min_duration = min_duration
         self.max_duration = max_duration
         self.max_lines = max_lines
+        self.target_language = target_language
 
     def run(self) -> None:
         audio_path = None
@@ -56,11 +59,15 @@ class TranscribeWorker(QThread):
 
             self.progress.emit("Transcribiendo...")
             language = None if self.language in ("", "auto") else self.language
+            target = self.target_language or "original"
+            task = "transcribe" if target == "original" else "translate"
+
             segments, info = transcriber.transcribe(
                 audio_path,
                 language=language,
                 word_timestamps=True,
                 vad_filter=True,
+                task=task,
             )
 
             words = [w for seg in segments for w in seg.words]
@@ -77,10 +84,19 @@ class TranscribeWorker(QThread):
                 max_lines=self.max_lines,
             )
 
+            # Traducir post-procesado si el destino no es original ni inglés.
+            if target not in ("original", "en") and cues:
+                self.progress.emit("Traduciendo...")
+                texts = [c.text for c in cues]
+                translated = translate_texts(texts, target)
+                for c, t in zip(cues, translated):
+                    c.text = t
+
             # Incluir palabras para permitir ajustes en la revisión.
             info["words"] = words
             info["max_words"] = self.max_words
             info["max_lines"] = self.max_lines
+            info["target_language"] = target
 
             # Se conserva el WAV para el waveform; lo limpia la ventana al cerrar.
             self.finished_ok.emit(cues, str(audio_path), info)
