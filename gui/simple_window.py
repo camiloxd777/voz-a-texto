@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
 
 from core.exporters import to_ass, to_sbv, to_srt, to_ttml, to_vegas_csv
 from core.translator import TARGET_LANGUAGES
+from core.updater import apply_update, check_for_update, download_update
+from core.version import APP_VERSION
 
 from .review_dialog import ReviewDialog
 from .worker import TranscribeWorker
@@ -121,21 +123,83 @@ FORMATS = [
 ]
 
 
+class UpdateCheckWorker(QThread):
+    update_available = Signal(dict)
+    up_to_date = Signal()
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            info = check_for_update(timeout=10)
+            if info:
+                self.update_available.emit(info)
+            else:
+                self.up_to_date.emit()
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+
+
+class UpdateDownloadWorker(QThread):
+    progress = Signal(str)
+    finished_ok = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, update_info: dict, parent=None):
+        super().__init__(parent)
+        self.update_info = update_info
+
+    def run(self) -> None:
+        try:
+            import tempfile
+            from pathlib import Path
+
+            self.progress.emit("Descargando actualización...")
+            dest = Path(tempfile.gettempdir()) / "subtitulos-app-update.zip"
+            download_update(self.update_info, dest, timeout=180)
+            self.progress.emit("Aplicando actualización...")
+            apply_update(dest)
+            self.finished_ok.emit(str(dest))
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+
+
 class SimpleWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Subtítulos automáticos")
-        self.resize(600, 520)
+        self.resize(600, 560)
 
         self._input_path: str | None = None
         self._worker: TranscribeWorker | None = None
+        self._update_info: dict | None = None
+        self._update_check_worker: UpdateCheckWorker | None = None
+        self._update_dl_worker: UpdateDownloadWorker | None = None
+        self._manual_update_check = False
 
         self._build_ui()
+        self._start_update_check()
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 28, 28, 28)
         root.setSpacing(10)
+
+        # Banner de actualización (oculto por defecto)
+        self.update_frame = QFrame()
+        self.update_frame.setVisible(False)
+        self.update_frame.setStyleSheet(
+            "QFrame { background: #1f3a2b; border: 1px solid #2f6b45; border-radius: 6px; }"
+            "QLabel { color: #dff5e6; }"
+        )
+        uf = QHBoxLayout(self.update_frame)
+        uf.setContentsMargins(10, 6, 10, 6)
+        self.update_label = QLabel("Hay una actualización disponible.")
+        self.update_label.setWordWrap(True)
+        uf.addWidget(self.update_label, 1)
+        self.update_btn = QPushButton("Actualizar")
+        self.update_btn.clicked.connect(self._download_and_apply_update)
+        uf.addWidget(self.update_btn)
+        root.addWidget(self.update_frame)
 
         title = QLabel("Subtítulos automáticos")
         title.setFont(QFont("Segoe UI", 20, QFont.Bold))
@@ -265,10 +329,28 @@ class SimpleWindow(QWidget):
 
         root.addStretch(1)
 
+        bottom = QHBoxLayout()
+        version_label = QLabel(f"v{APP_VERSION}")
+        version_label.setStyleSheet("color: #666; font-size: 11px;")
+        bottom.addWidget(version_label)
+
+        self.check_updates_btn = QPushButton("Buscar actualizaciones")
+        self.check_updates_btn.setFlat(True)
+        self.check_updates_btn.setCursor(Qt.PointingHandCursor)
+        self.check_updates_btn.setStyleSheet(
+            "QPushButton { color: #888; font-size: 11px; padding: 2px 6px; }"
+            "QPushButton:hover { color: #bbb; }"
+            "QPushButton:disabled { color: #555; }"
+        )
+        self.check_updates_btn.clicked.connect(self._manual_check_updates)
+        bottom.addWidget(self.check_updates_btn)
+
+        bottom.addStretch(1)
+
         credit = QLabel("creado por masku")
-        credit.setAlignment(Qt.AlignCenter)
         credit.setStyleSheet("color: #666; font-size: 11px;")
-        root.addWidget(credit)
+        bottom.addWidget(credit)
+        root.addLayout(bottom)
 
     # ------------------------------------------------------------------
     def _update_format_desc(self) -> None:
@@ -398,6 +480,100 @@ class SimpleWindow(QWidget):
         from PySide6.QtWidgets import QMessageBox
 
         QMessageBox.critical(self, "Error", msg)
+
+    # ------------------------------------------------------------------
+    # Actualizaciones
+    def _start_update_check(self, manual: bool = False) -> None:
+        self._manual_update_check = manual
+        if manual and hasattr(self, "check_updates_btn"):
+            self.check_updates_btn.setEnabled(False)
+            self.check_updates_btn.setText("Buscando...")
+        self._update_check_worker = UpdateCheckWorker(self)
+        self._update_check_worker.update_available.connect(self._on_update_available)
+        self._update_check_worker.up_to_date.connect(self._on_update_up_to_date)
+        self._update_check_worker.failed.connect(self._on_update_check_failed)
+        self._update_check_worker.start()
+
+    def _manual_check_updates(self) -> None:
+        self._start_update_check(manual=True)
+
+    def _restore_check_updates_btn(self) -> None:
+        if hasattr(self, "check_updates_btn"):
+            self.check_updates_btn.setEnabled(True)
+            self.check_updates_btn.setText("Buscar actualizaciones")
+
+    def _on_update_available(self, info: dict) -> None:
+        self._update_info = info
+        version = info.get("version", "?")
+        self.update_label.setText(f"Actualización disponible: v{version} (actual: v{APP_VERSION})")
+        self.update_btn.setVisible(True)
+        self.update_btn.setText("Actualizar")
+        self.update_btn.setEnabled(True)
+        self.update_frame.setStyleSheet(
+            "QFrame { background: #1f3a2b; border: 1px solid #2f6b45; border-radius: 6px; }"
+            "QLabel { color: #dff5e6; }"
+        )
+        self.update_frame.setVisible(True)
+        self._restore_check_updates_btn()
+        self._manual_update_check = False
+
+    def _on_update_up_to_date(self) -> None:
+        if self._manual_update_check:
+            self.update_label.setText(f"Ya estás en la última versión (v{APP_VERSION}).")
+            self.update_btn.setVisible(False)
+            self.update_frame.setStyleSheet(
+                "QFrame { background: #1f2f3a; border: 1px solid #2f5570; border-radius: 6px; }"
+                "QLabel { color: #dfeef5; }"
+            )
+            self.update_frame.setVisible(True)
+        self._restore_check_updates_btn()
+        self._manual_update_check = False
+
+    def _on_update_check_failed(self, msg: str) -> None:
+        if self._manual_update_check:
+            self.update_label.setText(f"No se pudo buscar actualizaciones: {msg}")
+            self.update_btn.setVisible(False)
+            self.update_frame.setStyleSheet(
+                "QFrame { background: #3a2a1f; border: 1px solid #70502f; border-radius: 6px; }"
+                "QLabel { color: #f5eadf; }"
+            )
+            self.update_frame.setVisible(True)
+        self._restore_check_updates_btn()
+        self._manual_update_check = False
+
+    def _download_and_apply_update(self) -> None:
+        if not self._update_info:
+            return
+        self.update_btn.setVisible(True)
+        self.update_btn.setEnabled(False)
+        self.update_btn.setText("Descargando...")
+        self._update_dl_worker = UpdateDownloadWorker(self._update_info, self)
+        self._update_dl_worker.progress.connect(self._on_update_progress)
+        self._update_dl_worker.finished_ok.connect(self._on_update_applied)
+        self._update_dl_worker.failed.connect(self._on_update_failed)
+        self._update_dl_worker.start()
+
+    def _on_update_progress(self, msg: str) -> None:
+        self.update_btn.setText(msg)
+
+    def _on_update_applied(self, _path: str) -> None:
+        import sys
+        if getattr(sys, "frozen", False):
+            self.update_btn.setText("Reiniciando...")
+            # El updater reemplazará archivos y relanzará la app.
+            from PySide6.QtWidgets import QApplication
+            QApplication.quit()
+        else:
+            self.update_btn.setText("Descargada")
+            self.update_label.setText(
+                self.update_label.text() + " (en desarrollo: extraída en _update_extracted/)"
+            )
+
+    def _on_update_failed(self, msg: str) -> None:
+        self.update_btn.setVisible(True)
+        self.update_btn.setEnabled(True)
+        self.update_btn.setText("Reintentar")
+        self.update_label.setText(f"Error al actualizar: {msg}")
 
     def _open_folder(self) -> None:
         path = self.path_edit.text().strip()
