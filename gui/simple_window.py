@@ -58,6 +58,34 @@ TRANSLATE_OPTIONS = [
     ("pt", "Portugués"),
 ]
 
+# Opciones de calidad/velocidad (key, etiqueta, beam, best_of, temperature, desc)
+QUALITY_OPTIONS = [
+    (
+        "fast",
+        "Rápido",
+        1,
+        1,
+        [0.0],
+        "Más veloz; puede fallar un poco en audio difícil.",
+    ),
+    (
+        "balanced",
+        "Equilibrado",
+        5,
+        5,
+        [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+        "Buen balance entre velocidad y precisión.",
+    ),
+    (
+        "max",
+        "Máxima calidad",
+        8,
+        8,
+        [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+        "Más preciso, pero más lento (recomendado si el audio es difícil).",
+    ),
+]
+
 # Formatos disponibles (key, extensión, etiqueta, descripción).
 FORMATS = [
     {
@@ -155,6 +183,24 @@ class SimpleWindow(QWidget):
         tr_row.addWidget(self.translate_combo, 1)
         root.addLayout(tr_row)
 
+        # Calidad / velocidad
+        q_row = QHBoxLayout()
+        q_label = QLabel("Calidad:")
+        q_label.setStyleSheet("color: #ddd;")
+        q_row.addWidget(q_label)
+        self.quality_combo = QComboBox()
+        self.quality_combo.addItems([opt[1] for opt in QUALITY_OPTIONS])
+        self.quality_combo.setCurrentIndex(2)  # Máxima calidad por defecto (como antes)
+        self.quality_combo.currentIndexChanged.connect(self._update_quality_desc)
+        q_row.addWidget(self.quality_combo, 1)
+        root.addLayout(q_row)
+
+        self.quality_desc = QLabel("")
+        self.quality_desc.setWordWrap(True)
+        self.quality_desc.setStyleSheet("color: #999; font-size: 11px;")
+        root.addWidget(self.quality_desc)
+        self._update_quality_desc()
+
         # Formato de salida
         fmt_row = QHBoxLayout()
         fmt_label = QLabel("Formato:")
@@ -230,6 +276,11 @@ class SimpleWindow(QWidget):
         if 0 <= idx < len(FORMATS):
             self.format_desc.setText(FORMATS[idx]["desc"])
 
+    def _update_quality_desc(self) -> None:
+        idx = self.quality_combo.currentIndex()
+        if 0 <= idx < len(QUALITY_OPTIONS):
+            self.quality_desc.setText(QUALITY_OPTIONS[idx][5])
+
     def _open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -251,6 +302,8 @@ class SimpleWindow(QWidget):
         opt = WORD_OPTIONS[self.words_combo.currentIndex()]
         max_words, max_lines = opt[0], opt[1]
         target_language = TRANSLATE_OPTIONS[self.translate_combo.currentIndex()][0]
+        q = QUALITY_OPTIONS[self.quality_combo.currentIndex()]
+        _, _, beam_size, best_of, temperature, _ = q
 
         self._worker = TranscribeWorker(
             self._input_path,
@@ -264,6 +317,9 @@ class SimpleWindow(QWidget):
             max_duration=MAX_DURATION,
             max_lines=max_lines,
             target_language=target_language,
+            beam_size=beam_size,
+            best_of=best_of,
+            temperature=temperature,
         )
         self._worker.progress.connect(self._on_progress)
         self._worker.finished_ok.connect(self._on_finished)

@@ -195,6 +195,9 @@ class Transcriber:
         word_timestamps: bool = True,
         vad_filter: bool = True,
         task: str = "transcribe",
+        beam_size: int = 8,
+        best_of: int = 8,
+        temperature: float | list[float] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
     ) -> tuple[list[Segment], dict]:
         """Transcribe `audio_path` y devuelve (segmentos, info).
 
@@ -207,11 +210,10 @@ class Transcriber:
             task=task,
             word_timestamps=word_timestamps,
             vad_filter=vad_filter,
-            # --- Configuración de MÁXIMA precisión (open-source) ---
-            beam_size=8,                          # más haces de búsqueda
-            best_of=8,                            # más candidatos por temperatura
-            temperature=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],  # decodificación por temperaturas
-            condition_on_previous_text=True,      # usa el contexto anterior
+            beam_size=beam_size,
+            best_of=best_of,
+            temperature=list(temperature) if isinstance(temperature, (list, tuple)) else temperature,
+            condition_on_previous_text=True,
         )
 
         segments: list[Segment] = []

@@ -33,6 +33,9 @@ class TranscribeWorker(QThread):
         max_duration: float,
         max_lines: int = 1,
         target_language: str = "original",
+        beam_size: int = 8,
+        best_of: int = 8,
+        temperature=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -47,6 +50,9 @@ class TranscribeWorker(QThread):
         self.max_duration = max_duration
         self.max_lines = max_lines
         self.target_language = target_language
+        self.beam_size = beam_size
+        self.best_of = best_of
+        self.temperature = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0] if temperature is None else temperature
 
     def run(self) -> None:
         audio_path = None
@@ -68,6 +74,9 @@ class TranscribeWorker(QThread):
                 word_timestamps=True,
                 vad_filter=True,
                 task=task,
+                beam_size=self.beam_size,
+                best_of=self.best_of,
+                temperature=self.temperature,
             )
 
             words = [w for seg in segments for w in seg.words]
