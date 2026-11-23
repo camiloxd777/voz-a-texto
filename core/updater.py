@@ -51,13 +51,31 @@ def _http_get_json(url: str, timeout: int = 10) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def _download_file(url: str, dest: Path, timeout: int = 60) -> None:
+def _download_file(
+    url: str,
+    dest: Path,
+    timeout: int = 60,
+    progress_cb=None,
+) -> None:
     req = urllib.request.Request(
         url,
         headers={"User-Agent": f"SubtitulosAutomaticos/{APP_VERSION}"},
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp, open(dest, "wb") as f:
-        shutil.copyfileobj(resp, f)
+        total = int(resp.headers.get("Content-Length") or 0)
+        downloaded = 0
+        chunk = 1024 * 256
+        while True:
+            buf = resp.read(chunk)
+            if not buf:
+                break
+            f.write(buf)
+            downloaded += len(buf)
+            if progress_cb:
+                try:
+                    progress_cb(downloaded, total)
+                except Exception:
+                    pass
 
 
 def _sha256(path: Path) -> str:
@@ -134,14 +152,15 @@ def check_for_update(timeout: int = 10) -> dict | None:
         "sha256": sha256.lower(),
         "notes": str(release.get("body", "") or ""),
         "html_url": str(release.get("html_url", "") or ""),
+        "size": int(zip_asset.get("size", 0) or 0),
     }
 
 
-def download_update(update: dict, dest_zip: Path, timeout: int = 120) -> Path:
+def download_update(update: dict, dest_zip: Path, timeout: int = 120, progress_cb=None) -> Path:
     url = update.get("zip_url", "")
     if not url:
         raise RuntimeError("La actualización no tiene URL de descarga.")
-    _download_file(url, dest_zip, timeout=timeout)
+    _download_file(url, dest_zip, timeout=timeout, progress_cb=progress_cb)
 
     expected = str(update.get("sha256", "")).strip().lower()
     if expected:

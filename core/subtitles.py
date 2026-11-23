@@ -93,6 +93,7 @@ def build_cues(
     min_duration: float = 0.3,
     max_duration: float = 4.0,
     max_lines: int = 1,
+    end_padding: float = 0.25,
 ) -> list[SubtitleCue]:
     """Agrupa palabras en cues (frases cortas, estilo guion).
 
@@ -104,6 +105,7 @@ def build_cues(
     min_duration  : duración mínima de una cue (se extiende el final).
     max_duration  : duración máxima de una cue (se corta en silencio).
     max_lines     : número de líneas en las que se reparte el texto (1 o 2).
+    end_padding   : margen extra al final de cada cue (s) para evitar cortes tempranos.
     """
     if not words:
         return []
@@ -115,7 +117,7 @@ def build_cues(
         nonlocal current
         if not current:
             return
-        cues.append(_make_cue(current, min_duration, max_lines))
+        cues.append(_make_cue(current, min_duration, max_lines, end_padding=end_padding))
         current = []
 
     for w in words:
@@ -158,9 +160,11 @@ def build_cues(
     return track.cues
 
 
-def _make_cue(words: list[Word], min_duration: float, max_lines: int = 1) -> SubtitleCue:
+def _make_cue(
+    words: list[Word], min_duration: float, max_lines: int = 1, end_padding: float = 0.25
+) -> SubtitleCue:
     start = min(w.start for w in words)
-    end = max(w.end for w in words)
+    end = max(w.end for w in words) + max(0.0, end_padding)
 
     # Garantizar duración mínima extendiendo el final.
     if end - start < min_duration:

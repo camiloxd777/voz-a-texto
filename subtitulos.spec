@@ -11,15 +11,8 @@ from PyInstaller.utils.hooks import collect_all
 # Datos/binarios/imports de faster_whisper (incluye el modelo VAD silero_vad.onnx)
 fw_datas, fw_binaries, fw_hidden = collect_all("faster_whisper")
 
-# Argos Translate (traducción offline) + paquetes de idioma instalados
+# Argos Translate (traducción offline). Los paquetes de idioma se descargan bajo demanda.
 argos_datas, argos_binaries, argos_hidden = collect_all("argostranslate")
-argos_pkg_dir = Path.home() / ".local" / "share" / "argos-translate" / "packages"
-argos_pkg_datas = []
-if argos_pkg_dir.is_dir():
-    for f in argos_pkg_dir.rglob("*"):
-        if f.is_file():
-            rel = f.relative_to(argos_pkg_dir)
-            argos_pkg_datas.append((str(f), str(Path("argos-translate") / "packages" / rel.parent)))
 
 venv_site = Path(r"D:\subtitulos\.venv\Lib\site-packages")
 
@@ -45,7 +38,7 @@ a = Analysis(
     ["gui.py"],
     pathex=[],
     binaries=fw_binaries + argos_binaries + cuda_binaries + ffmpeg_binaries,
-    datas=fw_datas + argos_datas + argos_pkg_datas + ([(str(icon_file), ".")] if icon_file.exists() else []),
+    datas=fw_datas + argos_datas + ([(str(icon_file), ".")] if icon_file.exists() else []),
     hiddenimports=fw_hidden + argos_hidden + ["ctranslate2", "imageio_ffmpeg", "av"],
     hookspath=[],
     hooksconfig={},
