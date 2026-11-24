@@ -10,6 +10,10 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+from .logging_setup import get_logger
+
+log = get_logger("translator")
+
 
 # Idiomas destino soportados en la UI -> código Argos Translate
 TARGET_LANGUAGES = {
@@ -104,6 +108,7 @@ def download_language(
     if is_language_installed(target_code):
         return
 
+    log.info("Descargando idioma %s", target_code)
     try:
         import argostranslate.package as argos_package
     except Exception as exc:

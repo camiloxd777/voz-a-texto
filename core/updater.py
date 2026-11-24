@@ -13,7 +13,10 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from .logging_setup import get_logger
 from .version import APP_VERSION, GITHUB_RELEASES_URL
+
+log = get_logger("updater")
 
 
 def _parse_version(v: str) -> tuple[int, ...]:
@@ -160,6 +163,7 @@ def download_update(update: dict, dest_zip: Path, timeout: int = 120, progress_c
     url = update.get("zip_url", "")
     if not url:
         raise RuntimeError("La actualización no tiene URL de descarga.")
+    log.info("Descargando actualización desde %s", url)
     _download_file(url, dest_zip, timeout=timeout, progress_cb=progress_cb)
 
     expected = str(update.get("sha256", "")).strip().lower()
@@ -170,6 +174,7 @@ def download_update(update: dict, dest_zip: Path, timeout: int = 120, progress_c
                 dest_zip.unlink(missing_ok=True)
             except Exception:
                 pass
+            log.error("Verificación SHA256 fallida")
             raise RuntimeError(
                 "El archivo descargado no pasó la verificación de integridad (SHA256)."
             )
@@ -188,6 +193,7 @@ def apply_update(zip_path: Path) -> None:
     El zip debe tener la estructura de la app (subtitulos.exe, _internal/...).
     No debe incluir `models/` para evitar re-descargar el modelo.
     """
+    log.info("Aplicando actualización desde %s", zip_path)
     app_dir = _app_dir()
     staging = Path(tempfile.mkdtemp(prefix="subtitulos-update-"))
     extract_dir = staging / "extract"
@@ -207,6 +213,7 @@ def apply_update(zip_path: Path) -> None:
         if target.exists():
             shutil.rmtree(target, ignore_errors=True)
         shutil.copytree(extract_dir, target)
+        log.info("Modo desarrollo: extraído a %s", target)
         return
 
     exe_path = Path(sys.executable).resolve()
@@ -220,6 +227,8 @@ set "SRC={extract_dir}"
 set "DST={app_dir}"
 set "EXE={exe_path}"
 set "PID={pid}"
+set "ZIP={zip_path}"
+set "STAGING={staging}"
 
 :waitloop
 tasklist /FI "PID eq %PID%" 2>NUL | find /I "%PID%" >NUL
@@ -229,6 +238,8 @@ if "%ERRORLEVEL%"=="0" (
 )
 
 robocopy "%SRC%" "%DST%" /E /R:2 /W:1 /XD models >NUL
+del /f /q "%ZIP%" >NUL 2>&1
+rmdir /s /q "%STAGING%" >NUL 2>&1
 start "" "%EXE%"
 """
     script.write_text(script_content, encoding="utf-8")

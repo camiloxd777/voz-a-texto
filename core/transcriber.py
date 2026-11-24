@@ -198,10 +198,12 @@ class Transcriber:
         beam_size: int = 8,
         best_of: int = 8,
         temperature: float | list[float] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+        progress_cb=None,
     ) -> tuple[list[Segment], dict]:
         """Transcribe `audio_path` y devuelve (segmentos, info).
 
         `task`: "transcribe" (idioma original) o "translate" (traducir a inglés).
+        `progress_cb`: callback opcional (current_seconds, total_seconds) por segmento.
         `info` contiene language, language_probability, duration, etc.
         """
         segments_iter, info = self._model.transcribe(
@@ -215,6 +217,8 @@ class Transcriber:
             temperature=list(temperature) if isinstance(temperature, (list, tuple)) else temperature,
             condition_on_previous_text=True,
         )
+
+        total = float(getattr(info, "duration", 0) or 0)
 
         segments: list[Segment] = []
         for seg in segments_iter:
@@ -231,6 +235,11 @@ class Transcriber:
                     words=words,
                 )
             )
+            if progress_cb:
+                try:
+                    progress_cb(float(seg.end), total)
+                except Exception:
+                    pass
 
         return segments, {
             "language": info.language,

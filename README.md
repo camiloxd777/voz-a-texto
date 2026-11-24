@@ -1,22 +1,41 @@
-# Subtítulos automáticos (estilo Premiere) para Sony Vegas
+# Subtítulos automáticos
 
-Aplicación de escritorio que transcribe audio/video de forma **local** (sin
-internet) usando **faster-whisper** y genera subtítulos en **SRT**, **ASS** y
-**CSV nativo de Vegas**, listos para importar en Sony Vegas.
+Aplicación de escritorio que transcribe audio y video de forma **local** (sin
+internet) usando **faster-whisper**, y genera subtítulos con tiempos para editores
+de video en varios formatos: **SRT**, **SBV**, **ASS**, **TTML** y **CSV de Vegas**.
 
-Incluye una **interfaz gráfica** (tabla editable, forma de onda y reproducción)
-además del modo consola.
+Pensada para editores: transcribes, revisas los subtítulos en una tabla editable
+y exportas el formato que necesite tu editor (Premiere, CapCut, DaVinci, YouTube,
+Vegas, etc.).
+
+## Características
+
+- Transcripción **local/offline** con Whisper (`large-v3`), GPU CUDA o CPU.
+- **Formatos**: SRT, SBV, ASS, TTML y CSV de Vegas (con timecode `hh:mm:ss:ff`).
+- **Traducción**: mantener original, inglés, japonés, chino, francés, portugués y
+  coreano. Original e inglés vienen incluidos; los demás se descargan **bajo
+  demanda** desde la propia app (offline, con Argos Translate).
+- **Calidad/velocidad**: Rápido, Equilibrado y Máxima calidad.
+- **Revisión antes de exportar**: tabla editable, cambio de mayúsculas/minúsculas,
+  quitar puntuación, etc.
+- **Guardar como**: eliges dónde guardar y el nombre del archivo.
+- **Arrastrar y soltar** el archivo a la ventana.
+- **Modo claro y oscuro**, con preferencias recordadas.
+- **Actualizaciones automáticas** desde GitHub Releases, con barra de progreso,
+  changelog y reapertura automática (no vuelve a descargar el modelo).
+- **Log de la app** para diagnosticar errores.
 
 ## Requisitos
 
-- Windows 10/11, Python 3.10 o superior.
-- GPU NVIDIA con CUDA (recomendado, p. ej. RTX 3060) para el modelo `large-v3`.
-  También funciona en CPU (más lento, con `--device cpu`).
+- Windows 10/11.
+- Python 3.10 o superior (para desarrollo).
+- GPU NVIDIA con CUDA (recomendado, p. ej. RTX 3060) para `large-v3`. También
+  funciona en CPU (más lento).
 
-## Instalación
+## Instalación (desarrollo)
 
 ```powershell
-# 1. Crear y activar un entorno virtual (recomendado)
+# 1. Crear y activar un entorno virtual
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
@@ -29,18 +48,16 @@ pip install -r requirements.txt
 
 ### Activar la GPU (NVIDIA)
 
-`ctranslate2` compila contra CUDA 12 y necesita **cuBLAS 12**, que **no** viene
-ni en el driver de NVIDIA ni en el wheel de `ctranslate2`. En Windows, instala
-las librerías por pip y listo (quedan dentro del `.venv`, sin tocar el sistema):
+`ctranslate2` necesita **cuBLAS 12**, que no viene con el driver de NVIDIA ni con
+el wheel de `ctranslate2`. En Windows, instálalo por pip (queda dentro del `.venv`):
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install nvidia-cublas-cu12 nvidia-cuda-runtime-cu12
 ```
 
-La app registra automáticamente esas DLLs en el `PATH` al iniciar (ver
-`core/transcriber.py`), así que no necesitas nada más. Sin esto, al transcribir
-saldría `Error: Library cublas64_12.dll is not found`. Si no tienes GPU NVIDIA,
-usa `--device cpu`.
+La app registra automáticamente esas DLLs en el `PATH` al iniciar. Sin esto, al
+transcribir verás `Error: Library cublas64_12.dll is not found`. Si no tienes GPU
+NVIDIA, la app usa CPU automáticamente.
 
 ## Uso
 
@@ -50,21 +67,21 @@ usa `--device cpu`.
 python gui.py
 ```
 
-Flujo simple: **Selecciona el audio/video → elige palabras por línea y formato →
-Transcribir** (ves el progreso) → te da la ruta del archivo generado.
+Flujo: **elige el archivo (o arrástralo) → ajusta palabras por línea, idioma,
+calidad y formato → Transcribir → revisa → exporta donde quieras**.
 
-Formatos disponibles (con mini leyenda en la propia app):
+Formatos disponibles:
 
 | Formato | Para qué |
 |---|---|
-| **CSV** | Sony Vegas (`Insert > Insert Subtitles from File`) |
 | **SRT** | Universal: Premiere, CapCut, DaVinci Resolve, YouTube |
 | **SBV** | YouTube (SubViewer) |
 | **ASS** | Anime / fansubs: fuentes, colores y posiciones |
 | **TTML** | Broadcast y streaming (Netflix, TV, DASH) |
+| **CSV** | Sony Vegas (`Insert > Insert Subtitles from File`) |
 
-> ¿Quieres más control? Hay una versión avanzada con editor completo
-> (tabla, forma de onda y ajustes): `python gui_avanzada.py`.
+> Hay una versión avanzada con editor completo (tabla, forma de onda y ajustes):
+> `python gui_avanzada.py`.
 
 ### Consola
 
@@ -75,57 +92,39 @@ python app.py video.mp4
 # Ajustar largo de frases y pausas
 python app.py video.mp4 --max-words 2 --max-gap 0.3
 
-# Solo SRT (sin ASS ni Vegas)
+# Solo SRT
 python app.py video.mp4 --no-ass --no-vegas
 
 # Salida con otro nombre
 python app.py video.mp4 -o C:\subtitulos\episodio1
 ```
 
-### Opciones principales
+### Opciones principales (CLI)
 
 | Opción | Por defecto | Descripción |
 |---|---|---|
 | `--model` | `large-v3` | Tamaño del modelo (`tiny`, `base`, `small`, `medium`, `large-v3`) |
 | `--language` | `es` | Idioma (`es`, `en`, ...). `auto` para detectar |
 | `--device` | `auto` | `auto`, `cuda` o `cpu` |
-| `--max-words` | `3` | Máx. palabras por línea (frases cortas, estilo guion) |
-| `--max-chars` | `18` | Tope de caracteres por línea (seguridad) |
+| `--max-words` | `3` | Máx. palabras por línea |
+| `--max-chars` | `18` | Tope de caracteres por línea |
 | `--max-gap` | `0.4` | Pausa (s) que corta una línea |
 | `--min-duration` | `0.3` | Duración mínima de una línea (s) |
 | `--max-duration` | `4.0` | Duración máxima de una línea (s) |
-| `--fps` | `60` | FPS del proyecto de Vegas (debe coincidir; 29.97 = SMPTE Drop) |
+| `--fps` | `60` | FPS para el CSV de Vegas |
 | `--no-vegas` | — | No exportar el `.csv` para Vegas |
 
-## Importar en Sony Vegas (con la duración correcta)
+## Actualizaciones
 
-Vegas **no importa bien el `.srt`** como eventos con duración. Para que cada
-subtítulo entre en la línea de tiempo **con su tiempo de inicio y fin exactos**,
-usa el archivo `.vegas.csv` que genera la app (formato nativo de Vegas):
+La app busca actualizaciones en GitHub Releases al abrir. Si hay una nueva
+versión, muestra un banner con botón **Actualizar**, descarga el paquete (sin el
+modelo de IA), muestra la barra de progreso y el changelog, y se reinicia sola al
+terminar.
 
-1. En Vegas, coloca tu video en la línea de tiempo.
-2. Menú **Insert > Insert Subtitles from File**.
-3. Haz clic en **Browse** y selecciona el archivo **`tu_video.vegas.csv`**.
-4. Elige el preset de texto que prefieras y pulsa **OK**.
+## Logs
 
-Vegas crea una pista nueva con un **evento de texto por subtítulo**, ya
-sincronizado (nada de los 5 segundos fijos que salen al importar texto plano).
-
-> Formato **confirmado** en Vegas Pro 2026 (Boris FX): 4 columnas separadas por
-> **comas** — `Start, End, Length, Text` — con timecode `hh:mm:ss;ff`
-> (drop-frame) o `hh:mm:ss:ff` (no drop). El texto va en el último campo, así
-> que puede contener comas.
->
-> **⚠️ Ojo:** el separador debe ser **coma** (un `.txt` con tabulaciones NO
-> funciona: Vegas lo trata como "texto simple" y pierde los tiempos).
->
-> **⚠️ Importante:** el `--fps` debe coincidir con el frame rate de TU proyecto
-> de Vegas, o Vegas no reconocerá los timecodes y los mostrará como texto.
-> Por ejemplo: proyecto a 60 fps → `--fps 60` (por defecto); a 25 (PAL) →
-> `--fps 25`; a 29.97 → `--fps 29.97`.
-
-- **SRT**: formato universal (para YouTube, Subtitle Edit, etc.).
-- **ASS**: subtítulos con estilo (fuente, color, contorno) para herramientas tipo Aegisub.
+Los logs se guardan en:
+`%LOCALAPPDATA%\SubtitulosAutomaticos\logs\app.log`.
 
 ## Estructura
 
@@ -138,10 +137,15 @@ subtitulos/
 │   ├── audio.py        # extracción de audio con ffmpeg
 │   ├── transcriber.py  # faster-whisper (GPU/CPU)
 │   ├── subtitles.py    # modelo de datos + post-procesado
-│   └── exporters.py    # SRT, ASS y CSV nativo de Vegas
+│   ├── exporters.py    # SRT, ASS, SBV, TTML y CSV de Vegas
+│   ├── translator.py   # traducción offline (Argos) bajo demanda
+│   ├── updater.py      # actualizaciones desde GitHub Releases
+│   ├── version.py      # versión de la app
+│   └── logging_setup.py# log de la app
 ├── gui/
-│   ├── simple_window.py  # ventana simple (subir + transcribir + CSV)
+│   ├── simple_window.py  # ventana simple
 │   ├── main_window.py    # ventana avanzada (tabla + ajustes + export)
+│   ├── review_dialog.py  # revisión de subtítulos antes de exportar
 │   ├── waveform.py       # forma de onda con reproducción
 │   ├── worker.py         # transcripción en hilo aparte
 │   └── timeutil.py       # parseo/formato de tiempos
@@ -150,6 +154,7 @@ subtitulos/
 
 ## Roadmap
 
-1. ✅ Fase 1: backend de transcripción + exportación SRT/ASS/Vegas.
-2. ✅ Fase 2: interfaz gráfica (tabla editable + waveform + ajustes).
-3. ⏳ Fase 3: estilos ASS avanzados, preview, atajos extra.
+1. ✅ Backend de transcripción + exportación (SRT/ASS/SBV/TTML/Vegas).
+2. ✅ Interfaz gráfica simple (revisión, traducción, calidad, formatos).
+3. ✅ Actualizaciones automáticas y log de la app.
+4. ⏳ Estilos ASS avanzados, preview y atajos extra.

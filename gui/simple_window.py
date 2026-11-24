@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.exporters import to_ass, to_sbv, to_srt, to_ttml, to_vegas_csv
+from core.logging_setup import get_logger, log_file
 from core.translator import TARGET_LANGUAGES, download_language, is_language_installed
 from core.updater import apply_update, check_for_update, download_update
 from core.version import APP_VERSION
@@ -283,6 +284,7 @@ class SimpleWindow(QWidget):
         super().__init__()
         self.setWindowTitle("Subtítulos automáticos")
         self.resize(600, 560)
+        self.setAcceptDrops(True)
 
         self._input_path: str | None = None
         self._worker: TranscribeWorker | None = None
@@ -292,14 +294,31 @@ class SimpleWindow(QWidget):
         self._manual_update_check = False
         self._lang_dl_worker: LanguageDownloadWorker | None = None
         self._pending_transcribe: dict | None = None
+        self._last_export_cues: list | None = None
+        self._loading_prefs = False
         self._config = _load_config()
         self._theme_name = self._config.get("theme", "dark")
         if self._theme_name not in THEMES:
             self._theme_name = "dark"
+        self.log = get_logger("gui")
 
         self._build_ui()
         self._apply_theme()
+        self._load_prefs()
         self._start_update_check()
+
+    # ------------------------------------------------------------------
+    # Drag & drop
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path:
+                self._load_file(path)
+                break
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -321,6 +340,9 @@ class SimpleWindow(QWidget):
         self.update_label = QLabel("Hay una actualización disponible.")
         self.update_label.setWordWrap(True)
         uf.addWidget(self.update_label, 1)
+        self.changelog_btn = QPushButton("Ver cambios")
+        self.changelog_btn.clicked.connect(self._show_changelog)
+        uf.addWidget(self.changelog_btn)
         self.update_btn = QPushButton("Actualizar")
         self.update_btn.clicked.connect(self._download_and_apply_update)
         uf.addWidget(self.update_btn)
@@ -364,6 +386,7 @@ class SimpleWindow(QWidget):
         self.words_combo = QComboBox()
         self.words_combo.addItems([opt[2] for opt in WORD_OPTIONS])
         self.words_combo.setCurrentIndex(2)  # 3 palabras por defecto
+        self.words_combo.currentIndexChanged.connect(self._save_prefs)
         words_row.addWidget(self.words_combo, 1)
         root.addLayout(words_row)
 
@@ -375,6 +398,7 @@ class SimpleWindow(QWidget):
         self.translate_combo = QComboBox()
         self._refresh_translate_combo()
         self.translate_combo.setCurrentIndex(0)  # Mantener original
+        self.translate_combo.currentIndexChanged.connect(self._save_prefs)
         tr_row.addWidget(self.translate_combo, 1)
         root.addLayout(tr_row)
 
@@ -386,6 +410,7 @@ class SimpleWindow(QWidget):
         self.quality_combo = QComboBox()
         self.quality_combo.addItems([opt[1] for opt in QUALITY_OPTIONS])
         self.quality_combo.setCurrentIndex(2)  # Máxima calidad por defecto (como antes)
+        self.quality_combo.currentIndexChanged.connect(self._save_prefs)
         self.quality_combo.currentIndexChanged.connect(self._update_quality_desc)
         q_row.addWidget(self.quality_combo, 1)
         root.addLayout(q_row)
@@ -405,6 +430,7 @@ class SimpleWindow(QWidget):
         for fmt in FORMATS:
             self.format_combo.addItem(fmt["label"])
         self.format_combo.setCurrentIndex(1)  # SRT por defecto
+        self.format_combo.currentIndexChanged.connect(self._save_prefs)
         self.format_combo.currentIndexChanged.connect(self._update_format_desc)
         fmt_row.addWidget(self.format_combo, 1)
         root.addLayout(fmt_row)
@@ -455,6 +481,10 @@ class SimpleWindow(QWidget):
         self.copy_btn.clicked.connect(self._copy_path)
         buttons.addWidget(self.copy_btn)
 
+        self.save_as_btn = QPushButton("Guardar como...")
+        self.save_as_btn.clicked.connect(self._save_as_again)
+        buttons.addWidget(self.save_as_btn)
+
         result_layout.addLayout(buttons)
         root.addWidget(self.result_frame)
 
@@ -485,6 +515,16 @@ class SimpleWindow(QWidget):
         )
         self.theme_btn.clicked.connect(self._toggle_theme)
         bottom.addWidget(self.theme_btn)
+
+        self.log_btn = QPushButton("Log")
+        self.log_btn.setFlat(True)
+        self.log_btn.setCursor(Qt.PointingHandCursor)
+        self.log_btn.setStyleSheet(
+            "QPushButton { color: #888; font-size: 11px; padding: 2px 6px; }"
+            "QPushButton:hover { color: #bbb; }"
+        )
+        self.log_btn.clicked.connect(self._open_log)
+        bottom.addWidget(self.log_btn)
 
         bottom.addStretch(1)
 
@@ -534,6 +574,11 @@ class SimpleWindow(QWidget):
                 f"QPushButton {{ color: {muted}; font-size: 11px; padding: 2px 6px; border: none; background: transparent; }}"
                 f"QPushButton:hover {{ color: {fg}; }}"
             )
+        if hasattr(self, "log_btn"):
+            self.log_btn.setStyleSheet(
+                f"QPushButton {{ color: {muted}; font-size: 11px; padding: 2px 6px; border: none; background: transparent; }}"
+                f"QPushButton:hover {{ color: {fg}; }}"
+            )
         if hasattr(self, "credit_label"):
             link_color = muted if self._theme_name == "dark" else muted
             self.credit_label.setText(
@@ -549,6 +594,32 @@ class SimpleWindow(QWidget):
         if key in ("original", "en"):
             return label
         return label if is_language_installed(key) else f"{label} (descargar)"
+
+    def _load_prefs(self) -> None:
+        cfg = self._config
+        self._loading_prefs = True
+        try:
+            def set_idx(combo, key, default):
+                idx = cfg.get(key, default)
+                if isinstance(idx, int) and 0 <= idx < combo.count():
+                    combo.setCurrentIndex(idx)
+
+            set_idx(self.words_combo, "words_index", 2)
+            set_idx(self.translate_combo, "translate_index", 0)
+            set_idx(self.quality_combo, "quality_index", 2)
+            set_idx(self.format_combo, "format_index", 1)
+        finally:
+            self._loading_prefs = False
+
+    def _save_prefs(self) -> None:
+        if self._loading_prefs:
+            return
+        self._config["words_index"] = self.words_combo.currentIndex()
+        self._config["translate_index"] = self.translate_combo.currentIndex()
+        self._config["quality_index"] = self.quality_combo.currentIndex()
+        self._config["format_index"] = self.format_combo.currentIndex()
+        self._config["theme"] = self._theme_name
+        _save_config(self._config)
 
     def _refresh_translate_combo(self) -> None:
         current = self.translate_combo.currentIndex()
@@ -579,10 +650,15 @@ class SimpleWindow(QWidget):
         )
         if not path:
             return
+        self._load_file(path)
+
+    def _load_file(self, path: str) -> None:
         self._input_path = path
         self.file_label.setText(Path(path).name)
         self.transcribe_btn.setEnabled(True)
         self.result_frame.setVisible(False)
+        self.status_label.setText("")
+        self.log.info("Archivo seleccionado: %s", path)
 
     def _transcribe(self) -> None:
         if not self._input_path:
@@ -664,9 +740,7 @@ class SimpleWindow(QWidget):
         self.transcribe_btn.setEnabled(True)
         self.open_btn.setEnabled(True)
         self.status_label.setText("")
-        from PySide6.QtWidgets import QMessageBox
-
-        QMessageBox.critical(self, "Error descargando idioma", msg)
+        self._show_error("Error descargando idioma", msg)
 
     def _start_transcription(self, params: dict) -> None:
         self._worker = TranscribeWorker(
@@ -686,6 +760,7 @@ class SimpleWindow(QWidget):
             temperature=params["temperature"],
         )
         self._worker.progress.connect(self._on_progress)
+        self._worker.progress_pct.connect(self._on_transcribe_progress_pct)
         self._worker.finished_ok.connect(self._on_finished)
         self._worker.failed.connect(self._on_failed)
 
@@ -699,6 +774,15 @@ class SimpleWindow(QWidget):
 
     def _on_progress(self, msg: str) -> None:
         self.status_label.setText(msg)
+        # Fuera de la fase de transcripción la barra queda indeterminada.
+        if "Transcribiendo" not in msg:
+            self.progress.setRange(0, 0)
+
+    def _on_transcribe_progress_pct(self, pct: int) -> None:
+        if self.progress.maximum() == 0:
+            self.progress.setRange(0, 100)
+        self.progress.setValue(pct)
+        self.status_label.setText(f"Transcribiendo... {pct}%")
 
     def _on_finished(self, cues: list, audio_path: str, info: dict) -> None:
         self.progress.setVisible(False)
@@ -726,24 +810,69 @@ class SimpleWindow(QWidget):
             return
 
         fmt = FORMATS[self.format_combo.currentIndex()]
-        out_path = Path(self._input_path).with_suffix(fmt["ext"])
+        self._last_export_cues = final_cues
+        out_path = self._ask_save_path(fmt)
 
-        key = fmt["key"]
-        if key == "csv":
-            out_path.write_text(to_vegas_csv(final_cues, fps=FPS), encoding="utf-8")
-        elif key == "srt":
-            out_path.write_text(to_srt(final_cues), encoding="utf-8")
-        elif key == "sbv":
-            out_path.write_text(to_sbv(final_cues), encoding="utf-8")
-        elif key == "ass":
-            out_path.write_text(to_ass(final_cues), encoding="utf-8")
-        elif key == "ttml":
-            out_path.write_text(to_ttml(final_cues), encoding="utf-8")
+        if not out_path:
+            self.status_label.setText("Exportación cancelada.")
+            return
+
+        self._export_cues(final_cues, fmt, out_path)
 
         self.status_label.setText(f"Listo: {len(final_cues)} subtítulos.")
         self.done_label.setText(f"✅  ¡Listo! Tu archivo ({fmt['label']}):")
         self.path_edit.setText(str(out_path))
         self.result_frame.setVisible(True)
+        self.log.info("Exportado a %s (%s)", out_path, fmt["key"])
+
+    def _ask_save_path(self, fmt: dict) -> Path | None:
+        default_dir = str(Path(self._input_path).parent)
+        default_name = Path(self._input_path).stem + fmt["ext"]
+        filters = {
+            "csv": "Vegas CSV (*.csv)",
+            "srt": "SRT (*.srt)",
+            "sbv": "SBV (*.sbv)",
+            "ass": "ASS (*.ass)",
+            "ttml": "TTML (*.ttml)",
+        }
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar subtítulos como",
+            str(Path(default_dir) / default_name),
+            filters.get(fmt["key"], "Todos (*.*)"),
+        )
+        if not path:
+            return None
+        p = Path(path)
+        if not p.suffix:
+            p = p.with_suffix(fmt["ext"].replace(".vegas", "") if fmt["key"] == "csv" else fmt["ext"])
+        return p
+
+    def _export_cues(self, cues: list, fmt: dict, out_path: Path) -> None:
+        key = fmt["key"]
+        if key == "csv":
+            out_path.write_text(to_vegas_csv(cues, fps=FPS), encoding="utf-8")
+        elif key == "srt":
+            out_path.write_text(to_srt(cues), encoding="utf-8")
+        elif key == "sbv":
+            out_path.write_text(to_sbv(cues), encoding="utf-8")
+        elif key == "ass":
+            out_path.write_text(to_ass(cues), encoding="utf-8")
+        elif key == "ttml":
+            out_path.write_text(to_ttml(cues), encoding="utf-8")
+
+    def _save_as_again(self) -> None:
+        cues = getattr(self, "_last_export_cues", None)
+        if not cues:
+            return
+        fmt = FORMATS[self.format_combo.currentIndex()]
+        out_path = self._ask_save_path(fmt)
+        if not out_path:
+            return
+        self._export_cues(cues, fmt, out_path)
+        self.path_edit.setText(str(out_path))
+        self.status_label.setText(f"Guardado en: {out_path.name}")
+        self.log.info("Re-exportado a %s (%s)", out_path, fmt["key"])
 
     @staticmethod
     def _cleanup_audio(audio_path: str | None) -> None:
@@ -760,9 +889,7 @@ class SimpleWindow(QWidget):
         self.open_btn.setEnabled(True)
         self.status_label.setText("")
         self.result_frame.setVisible(False)
-        from PySide6.QtWidgets import QMessageBox
-
-        QMessageBox.critical(self, "Error", msg)
+        self._show_error("Error", msg)
 
     # ------------------------------------------------------------------
     # Actualizaciones
@@ -784,6 +911,20 @@ class SimpleWindow(QWidget):
         if hasattr(self, "check_updates_btn"):
             self.check_updates_btn.setEnabled(True)
             self.check_updates_btn.setText("Buscar actualizaciones")
+
+    def _show_changelog(self) -> None:
+        notes = (self._update_info or {}).get("notes", "").strip()
+        version = (self._update_info or {}).get("version", "")
+        title = f"Novedades v{version}" if version else "Novedades"
+        if not notes:
+            notes = "Sin notas de esta versión."
+        from PySide6.QtWidgets import QMessageBox
+
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(notes)
+        box.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        box.exec()
 
     def _on_update_available(self, info: dict) -> None:
         self._update_info = info
@@ -870,6 +1011,7 @@ class SimpleWindow(QWidget):
         self.update_progress.setFormat("Actualización aplicada")
         if getattr(sys, "frozen", False):
             self.update_label.setText("Reiniciando...")
+            self._show_changelog()
             # El updater reemplazará archivos y relanzará la app.
             from PySide6.QtWidgets import QApplication
             QApplication.quit()
@@ -890,6 +1032,25 @@ class SimpleWindow(QWidget):
         path = self.path_edit.text().strip()
         if path:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
+
+    def _open_log(self) -> None:
+        p = log_file()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(p)))
+
+    def _show_error(self, title: str, msg: str) -> None:
+        self.log.error("%s: %s", title, msg)
+        from PySide6.QtWidgets import QMessageBox
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Critical)
+        box.setWindowTitle(title)
+        box.setText(msg)
+        box.setInformativeText(f"Puedes ver más detalles en el log:\n{log_file()}")
+        box.addButton("Cerrar", QMessageBox.RejectRole)
+        btn = box.addButton("Abrir log", QMessageBox.ActionRole)
+        box.exec()
+        if box.clickedButton() is btn:
+            self._open_log()
 
     def _copy_path(self) -> None:
         QApplication.clipboard().setText(self.path_edit.text().strip())

@@ -93,7 +93,7 @@ def build_cues(
     min_duration: float = 0.3,
     max_duration: float = 4.0,
     max_lines: int = 1,
-    end_padding: float = 0.25,
+    end_padding: float = 0.03,
 ) -> list[SubtitleCue]:
     """Agrupa palabras en cues (frases cortas, estilo guion).
 
@@ -147,13 +147,13 @@ def build_cues(
 
     flush()
 
-    # Evitar solapamientos: ninguna cue puede terminar después del inicio de
-    # la siguiente. Corrige tanto los timestamps ruidosos de Whisper como el
-    # estiramiento por duración mínima (que a veces se pasaba y "apilaba"
-    # subtítulos en el editor).
+    # Evitar solapamientos y sangrado al siguiente subtítulo.
+    # Dejar un pequeño hueco cuando sea posible para que no "pise" la siguiente voz.
     for i in range(len(cues) - 1):
-        if cues[i].end > cues[i + 1].start:
-            cues[i].end = cues[i + 1].start
+        next_start = cues[i + 1].start
+        max_end = next_start - 0.02 if (next_start - cues[i].start) > 0.08 else next_start
+        if cues[i].end > max_end:
+            cues[i].end = max(cues[i].start + 0.05, max_end)
 
     track = SubtitleTrack(cues)
     track.reindex()
